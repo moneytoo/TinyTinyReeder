@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Tiny Tiny Reeder</title>
+
+	<meta name="viewport" content="initial-scale=1, user-scalable=no">
+	<meta charset="utf-8">
+
+	<link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+
+	<link rel="icon" type="image/png" sizes="512x512" href="icon512.png" />
+	<link rel="apple-touch-icon" sizes="512x512" href="apple-touch-icon.png" />
+
+	<meta name="apple-mobile-web-app-capable" content="yes" />
+	<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+	<!-- Service worker -->
+	<script src="upup.min.js"></script>
+
+	<style>
+		html {
+			-webkit-user-select: none;
+			-webkit-touch-callout: none;
+			-webkit-text-size-adjust: 100%;
+		}
+
+		body {
+			margin: 0;
+			font-family: sans-serif;
+			background-color: #F1F1F1;
+		}
+
+		#container {
+			display: flex;
+			align-items: stretch;
+			overflow-x: scroll;
+			scroll-snap-type: x mandatory;
+		}
+
+		#container > div {
+			flex-shrink: 0;
+		}
+
+		#container::-webkit-scrollbar {
+			display: none;
+		}
+
+		.item.removed {
+			max-height: 0;
+			overflow: hidden;
+		}
+
+		.fullpage {
+			position: relative;
+			display: inline-block;
+			width: 100vw;
+			white-space: initial;
+			vertical-align: top;
+			scroll-snap-align: start;
+			scroll-snap-stop: always;
+		}
+
+		.wrapped {
+			overflow-y: scroll;
+			overflow-y: overlay;
+			overflow-x: hidden;
+
+			/*height: -moz-available;*/
+			/*height: -webkit-fill-available;*/
+			/*height: stretch;*/
+			height: 100vh;
+		}
+
+		.item {
+			display: block;
+			text-decoration: none;
+			color: #444;
+			background-color: white;
+			transition: max-height 0.3s ease-out; max-height: 16em;
+		}
+		.headline-inner {
+			padding: 0.75em 0.75em 0.75em 2.75em;
+			/*margin-left: 2em;*/
+		}
+
+		.headline-time {
+			float: right;
+		}
+
+		.headline-title {
+			font-weight: 500;
+		}
+		.headline-excerpt {
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.headline-icon-wrapper {
+			float: left;
+			padding: 1.75em 0.5em 0 1em;
+		}
+
+		.headline-icon {
+			width: 1em;
+			height: 1em;
+			padding: 0.125em;
+			background-color: white;
+			border-radius: 0.125em;
+		}
+
+		#list {
+			background: linear-gradient(to right, white 0%, #EAEAEA 20%, #00E676 20% 50%, #FF1744 50% 80%, #EAEAEA 80%, white 100%);
+			overflow-x: hidden;
+			touch-action: pan-y;
+		}
+		#list-bottom {
+			height: 40vh;
+			box-shadow: inset 0 2em 2em -2em #CCC;
+		}
+
+		#list-wrapper {
+			overflow-x: hidden;
+		}
+
+		#preview-header {
+			padding: 1em;
+
+			max-width: 800px;
+			margin: 0 auto;
+		}
+
+		#preview {
+			background-color: white;
+			display: none;
+			/*overflow: scroll;*/
+			overscroll-behavior-y: contain;
+		}
+
+		.primary {
+			padding-top: 0.1em;
+			padding-bottom: 0.1em;
+		}
+
+		.secondary {
+			color: darkgray;
+			font-size: 75%;
+			padding-top: 0.1em;
+			padding-bottom: 0.1em;
+		}
+
+		#preview-time:first-letter {
+			text-transform: uppercase;
+		}
+
+		#preview-title {
+			font-size: 1.5em;
+			display: block;
+			color: #444;
+			font-weight: 600;
+		}
+		#content {
+			padding: 0em 1em 2em 1em;
+			background-color: #FFF;
+			font-size: 90%;
+			line-height: 125%;
+			color: #444;
+			word-break: break-word;
+
+			max-width: 600px;
+			margin: 0.5em auto 0 auto;
+		}
+		#content h1, h2, h3, h4, h5, h6 {
+			line-height: initial;
+		}
+		#content figure {
+			margin: 0.5em;
+		}
+		#content img {
+			/* Safe - use padding */
+			max-width: 100%;
+		}
+		#content img.immersive {
+			/* Dangerous! Full width - break out of padding */
+			display: block;
+			width: 100vw;
+			position: relative;
+			left: 50%;
+			right: 50%;
+			margin: 0.5em -50vw;
+
+			max-width: unset;
+		}
+		a {
+			color: #0366d6;
+			text-decoration: none;
+			cursor: pointer;
+		}
+
+		.previewed {
+			background-color: white;
+		}
+
+		.previewing {
+			background-color: #EEE !important;
+		}
+
+		.swiping {
+			border-radius: 0.5em;
+			box-shadow: rgba(0, 0, 0, 0.1) 0 0 0.6em 0;
+		}
+
+		#empty {
+			display: none;
+			align-items: center;
+			text-align: center;
+			height: 100%;
+		}
+
+		#empty-text {
+			align-items: center;
+			width: 100%;
+		}
+
+		div:focus {
+			outline: none;
+		}
+
+		#preview-wrapper {
+			background-color: #EEE;
+		}
+
+		@media (min-device-width: 1024px), (orientation: landscape) {
+			#list-wrapper {
+				width: 40vw;
+			}
+			#preview-wrapper {
+				width: 60vw;
+			}
+			#content img.immersive {
+				margin: 0.5em -30vw;
+				width: 60vw;
+			}
+		}
+
+		@media (min-device-width: 1024px) {
+			::-webkit-scrollbar {
+				-webkit-appearance: none;
+				width: 4px;
+			}
+
+			::-webkit-scrollbar-thumb {
+				border-radius: 4px;
+				background-color: darkgray;
+			}
+
+			#content {
+				font-size: 95%;
+			}
+		}
+
+		@media (min-width: 1300px) {
+			#content img.immersive {
+				width: 800px;
+				max-width: unset;
+				margin-top: 0.5em;
+				margin-left: -100px;
+				left: unset;
+				right: unset;
+			}
+		}
+
+		.previewed > .headline {
+			opacity: 0.4;
+		}
+
+		.previewing > .headline {
+			opacity: 1 !important;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			body {
+				color: #CCC;
+				background-color: #333;
+			}
+			.item {
+				color: #EEE;
+				background-color: #222;
+			}
+			.headline-icon {
+				background-color: #EEE;
+			}
+			#list {
+				background: linear-gradient(to right, #333 0%, #555 20%, #00E676 20% 50%, #FF1744 50% 80%, #555 80%, #333 100%);
+			}
+			#list-bottom {
+				box-shadow: inset 0 2em 2em -2em #222;
+			}
+			#preview {
+				background-color: #222;
+			}
+			#preview-title {
+				color: #EEE;
+			}
+			#content {
+				background-color: #222;
+				color: #CCC;
+			}
+			a {
+				color: #5497e4;
+			}
+			.previewing {
+				background-color: #444 !important;
+			}
+			.swiping {
+				box-shadow: rgba(255, 255, 255, 0.1) 0 0 0.6em 0;
+			}
+			#preview-wrapper {
+				background-color: #222;
+			}
+			.new {
+				background-color: #2e2e2e;
+			}
+		}
+	</style>
+
+</head>
+
+<body>
+
+<div id="container">
+	<div id="list-wrapper" class="fullpage">
+		<div class="wrapped">
+			<div id="list"></div>
+			<div id="list-bottom"></div>
+			<div id="empty">
+				<div id="empty-text">No more news</div>
+			</div>
+		</div>
+	</div>
+
+	<div id="preview-wrapper" class="fullpage">
+		<div id="preview" class="wrapped" tabindex="1">
+			<div id="preview-header">
+				<a href="#" id="preview-href" target="_blank">
+					<div id="preview-time" class="secondary"></div>
+					<div id="preview-title" class="primary"></div>
+					<div id="preview-author" class="secondary"></div>
+					<div id="preview-feed" class="secondary"></div>
+				</a>
+			</div>
+			<div id="content"></div>
+		</div>
+	</div>
+</div>
+
+
+<script>
+
+	const URL = 'https://example.com/tt-rss/';
+	const USERNAME = 'admin';
+    const PASSWORD = 'admin';
+
+	const url_api = URL + 'api/';
+	const url_icons = URL + 'feed-icons/';
+
+	let sid;
+	var headlines;
+
+	var markNew = true;
+	var highestId = getHighestId();
+
+	var start;
+	var swipeInProgress;
+
+	let dark = false;
+    if (matchMedia('(prefers-color-scheme: dark)').matches) {
+        dark = true;
+    }
+    let metaTheme = document.createElement('meta');
+    metaTheme.name = 'theme-color';
+    metaTheme.content = dark ? 'black' : 'white';
+    document.head.appendChild(metaTheme);
+
+
+	function getListWidth() {
+		return document.getElementById('list').clientWidth;
+	}
+
+	function login() {
+		let xhr = new XMLHttpRequest();
+		xhr.addEventListener("load", function () {
+			if (xhr.status === 200) {
+				const json = JSON.parse(xhr.responseText);
+				sid = json.content.session_id;
+				getHeadlines(sid);
+			}
+		});
+		xhr.open("POST", url_api);
+		xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+		xhr.send(JSON.stringify({
+			"op": "login",
+			"user": USERNAME,
+			"password": PASSWORD}));
+	}
+
+	function getHeadlines(sid) {
+		let xhr = new XMLHttpRequest();
+		xhr.addEventListener("load", function () {
+			if (xhr.status === 200) {
+				localStorage.setItem('headlines', xhr.responseText);
+				headlines = JSON.parse(xhr.responseText).content;
+				processHeadlines(headlines);
+			}
+		});
+		xhr.open("POST", url_api);
+		xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+		xhr.send(JSON.stringify({
+			"op": "getHeadlines",
+			"sid": sid,
+			"feed_id": -4,
+			"view_mode": "unread",
+			"show_content": true,
+			"excerpt_length": 400,
+			"show_excerpt": true,
+			"order_by": "date_reverse",
+			"limit": 200
+			// "skip": 0
+		}));
+	}
+
+	function processHeadlines(headlines) {
+		headlines.sort((a, b) => b.updated - a.updated);
+
+		if (headlines.length > 0) {
+		    const newHighestId = headlines.reduce((max, p) => p.id > max ? p.id : max, headlines[0].id);
+		    setHighestId(newHighestId);
+
+		    const lowestId = headlines.reduce((min, p) => p.id < min ? p.id : min, headlines[0].id);
+		    if (lowestId >= highestId)
+		        markNew = false;
+		}
+
+		for (const headline of headlines) {
+			insertHeadline(headline);
+		}
+
+		updateCount();
+
+		if (headlines.length === 0)
+            setListEmpty();
+
+        document.addEventListener('keydown', handleKey);
+    }
+
+    function setListEmpty() {
+        document.getElementById('list-bottom').style.display = 'none';
+        document.getElementById('empty').style.display = 'flex';
+    }
+    
+    function handleKey(event) {
+	    // console.log(event);
+
+		if (event.key === 'j') {
+			openNext(false);
+		} else if (event.key === 'k') {
+		    openNext(true);
+		} else if (event.key === 'r') {
+            location.reload();
+		} else if (event.key === 'v') {
+		    const items = document.getElementsByClassName('previewing');
+		    if (items.length >= 0) {
+		        window.open(items[0].href);
+			}
+		} else if (event.key === 'm') {
+		    // Toggle read
+		} else if (event.key === 'x') {
+		    // Mine - mark & remove
+            const items = document.getElementsByClassName('previewing');
+            if (items.length >= 0)
+                markRead(sid, items[0]);
+		}
+    }
+
+    function openNext(backwards) {
+        let openNext = false;
+
+        if (document.getElementsByClassName('previewing').length === 0)
+            openNext = true;
+
+        let items = document.getElementsByClassName('item');
+
+        if (backwards)
+            items = Array.from(items).reverse();
+
+        for (const element of items) {
+			if (element.classList.contains('removed') && !element.classList.contains('previewing'))
+			    continue;
+
+            if (openNext) {
+                // element.scrollIntoView();
+				// HACK - id for wrapped
+                document.getElementsByClassName('wrapped')[0].scrollTop = document.getElementById(element.id).offsetTop - document.body.clientHeight * 0.4;
+                showContent(element.id);
+                return;
+            }
+
+            if (element.classList.contains('previewing')) {
+                openNext = true;
+            }
+
+        }
+	}
+
+	function insertHeadline(headline) {
+		let excerpt = headline.excerpt.replace(/\n|\r/g, '');
+		if (excerpt.endsWith('&hellip;'))
+			excerpt = excerpt.substring(0, excerpt.lastIndexOf('&hellip;'));
+
+		let headline_icon = document.createElement('img');
+		headline_icon.classList.add('headline-icon');
+		headline_icon.src = url_icons + headline.feed_id + ".ico";
+
+		let headline_icon_wrapper = document.createElement('div');
+		headline_icon_wrapper.classList.add('headline-icon-wrapper');
+
+		headline_icon_wrapper.appendChild(headline_icon);
+
+		let headline_feed = document.createElement('div');
+		headline_feed.classList.add('secondary');
+		headline_feed.innerText = headline.feed_title;
+
+		let headline_time = document.createElement('div');
+		headline_time.classList.add('headline-time');
+		headline_time.innerText = '･ ' + new Date(headline.updated * 1000).toLocaleTimeString(navigator.language, {hour: 'numeric', minute:'2-digit'});
+
+		headline_feed.appendChild(headline_time);
+
+		let headline_title = document.createElement('div');
+		headline_title.classList.add('headline-title');
+        headline_title.classList.add('primary');
+		headline_title.innerText = headline.title;
+
+		let headline_excerpt = document.createElement('div');
+		headline_excerpt.classList.add('headline-excerpt');
+        headline_excerpt.classList.add('secondary');
+		headline_excerpt.innerHTML = excerpt;
+
+		let headline_inner = document.createElement('div');
+		headline_inner.classList.add('headline-inner');
+
+		headline_inner.appendChild(headline_feed);
+		headline_inner.appendChild(headline_title);
+		headline_inner.appendChild(headline_excerpt);
+
+		let item = document.createElement('div');
+		item.classList.add('item');
+		item.href = headline.link;
+		item.id = headline.id;
+		// item.onclick = function() { showContent(headline.id); };
+
+		let headlineDiv = document.createElement('div');
+		headlineDiv.classList.add('headline');
+
+		if (markNew && headline.id > highestId)
+            item.classList.add('new');
+
+		headlineDiv.appendChild(headline_icon_wrapper);
+		headlineDiv.appendChild(headline_inner);
+
+		item.appendChild(headlineDiv);
+
+		// TODO: Exclude sides - add list of feeds to left
+
+		item.addEventListener('pointerdown', function(event) {
+			console.log('pointer down');
+
+			swipeInProgress = false;
+			start = event;
+
+            for (const element of document.getElementsByClassName('item')) {
+                element.style.removeProperty('transform');
+                element.style.removeProperty('transition');
+            }
+
+			this.addEventListener("pointermove", handlePointerMove, false);
+			this.addEventListener("pointerup", handlePointerUp, false);
+		});
+
+		document.getElementById('list').appendChild(item);
+	}
+
+	function handlePointerMove(event) {
+		console.log('pointer move');
+
+		const diffX = start.clientX - event.clientX;
+
+		if (Math.abs(diffX) > 20 || swipeInProgress) {
+			// Horizontal - swipe
+			swipeInProgress = true;
+
+			event.currentTarget.classList.add('swiping');
+            event.currentTarget.style.transform = 'translate(' + (-diffX) + 'px)';
+
+			// Swipe past 40% of list width - execute immediately without touch end
+			if (Math.abs(diffX) > getListWidth() * 0.4) {
+				handleSwipeAction(this, diffX, event.currentTarget);
+			}
+		}
+	}
+
+	function handleSwipeAction(that, diff, element) {
+		swipeInProgress = false;
+		that.removeEventListener('pointermove', handlePointerMove, false);
+		that.removeEventListener('pointerup', handlePointerUp, false);
+
+        element.classList.remove('swiping');
+
+		if (diff > 0) {
+			// Swipe from RIGHT to middle
+			markRead(sid, element);
+		} else {
+			// Swipe from LEFT to middle
+            window.open(element.href);
+            element.style.removeProperty('transform');
+            itemViewed(element);
+		}
+	}
+
+	function handlePointerUp(event) {
+		console.log('pointer up');
+
+        event.currentTarget.classList.remove('swiping');
+
+		if (swipeInProgress) {
+			const diffX = start.clientX - event.clientX;
+
+			// Animate only if item won't get removed
+			if (diffX <= getListWidth() * 0.2)
+                event.currentTarget.style.transition = 'all 0.3s ease-in-out';
+
+            event.currentTarget.style.transform = 'translate(0)';
+
+			if (Math.abs(diffX) > getListWidth() * 0.2) {
+				handleSwipeAction(this, diffX, event.currentTarget);
+			}
+		} else {
+			// FIXME
+			const id = event.currentTarget.id;
+			setTimeout( function() {
+				showContent(id);
+			}, 10);
+		}
+
+		this.removeEventListener('pointermove', handlePointerMove, false);
+		this.removeEventListener('pointerup', handlePointerUp, false);
+	}
+
+	function itemViewed(item) {
+        item.classList.add('previewed');
+    }
+
+	function markRead(sid, element) {
+		let xhr = new XMLHttpRequest();
+		xhr.addEventListener("load", function () {
+			if (xhr.status === 200) {
+                element.classList.add('removed');
+
+                updateCount();
+
+                const itemCount = document.getElementsByClassName('item').length;
+                if (itemCount > 0 && itemCount === document.getElementsByClassName('removed').length)
+                    setListEmpty();
+
+                if (element.classList.contains('previewing'))
+                	document.getElementById('preview').style.display = 'none';
+
+				const json = JSON.parse(xhr.responseText);
+				console.log(json);
+			}
+		});
+		xhr.open("POST", url_api);
+		xhr.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+		xhr.send(JSON.stringify({
+			"op": "updateArticle",
+			"sid": sid,
+			"article_ids": element.id,
+			"field": 2, // unread
+			"mode": 0 // false
+		}));
+	}
+
+	function showContent(id) {
+		const headline = headlines.find(headline => headline.id == id);
+
+        const preview = document.getElementById('preview');
+
+        if (preview.headline != id) {
+            // Mark item as preview
+            const item = document.getElementById(id);
+            itemViewed(item);
+
+            let itemHeadline = item.getElementsByClassName('headline')[0];
+            itemHeadline.style.removeProperty('opacity');
+            itemHeadline.style.removeProperty('transition');
+
+            // Highlight last opened
+            for (const element of document.getElementsByClassName('previewing')) {
+                element.classList.remove('previewing');
+
+				setTimeout((id) => {
+                    let item = document.getElementById(id).getElementsByClassName('headline')[0];
+                    item.style.transition = "opacity 90s ease";
+                    item.style.opacity = "1";
+				}, 20, element.id);
+            }
+            item.classList.add('previewing');
+
+            preview.style.display = 'block';
+            preview.headline = id;
+
+            const previewTime = document.getElementById('preview-time');
+            const dateTime = new Date(headline.updated * 1000);
+            const date = dateTime.toLocaleDateString(navigator.language, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            const time = dateTime.toLocaleTimeString(navigator.language, {hour: 'numeric', minute:'2-digit'});
+            previewTime.innerText = date + ' at ' + time;
+
+            document.getElementById('preview-title').innerText = headline.title;
+            document.getElementById('preview-href').href = headline.link;
+            document.getElementById('preview-author').innerText = headline.author;
+			document.getElementById('preview-feed').innerText = headline.feed_title;
+
+            const content = document.getElementById('content');
+            content.classList.add('content');
+            content.innerHTML = headline.content;
+
+            // Make actually wide imgs full width (break horizontal padding)
+            for (const img of content.getElementsByTagName('img')) {
+                img.onload = function(event) {
+                    const width = this.naturalWidth;
+                    if (width > 320) {
+                        const height = this.naturalHeight;
+                        if (width > height)
+                        	this.classList.add('immersive');
+                    }
+                };
+            }
+
+            preview.scrollTop = 0;
+		}
+        preview.focus();
+
+        // TODO: Smooth scrolls too slow???
+        // FIXME: scrollIntoView() doesn't work when it's already scrolling (?)
+        tryScrollingIntoPreview(0);
+	}
+
+	function tryScrollingIntoPreview(take) {
+        take++;
+
+		if (take > 150)
+		    return;
+
+        if (document.getElementById('container').scrollLeft === 0) {
+            // TODO: Check prefers-reduced-motion
+            document.getElementById('preview').scrollIntoView({behavior: "smooth"});
+		} else {
+            if (take === 1)
+                document.getElementById('list-wrapper').scrollIntoView();
+            setTimeout(function () { tryScrollingIntoPreview(take); }, 10);
+        }
+	}
+
+	function setHighestId(id) {
+        localStorage.setItem('highestId', id);
+    }
+
+	function getHighestId() {
+		return localStorage.getItem('highestId') || 0;
+	}
+
+	function updateCount() {
+	    let title = document.head.getElementsByTagName('title')[0];
+	    let items = document.getElementsByClassName('item');
+	    let removedItems = document.getElementsByClassName('removed');
+	    const count = items.length - removedItems.length;
+	    title.innerText = 'Tiny Tiny Reeder (' + count + ')';
+	}
+
+	document.addEventListener("DOMContentLoaded", function(event) {
+		if (navigator.onLine) {
+			login();
+		} else if (localStorage.getItem('headlines') !== null) {
+			headlines = JSON.parse(localStorage.getItem('headlines')).content;
+			processHeadlines(headlines);
+		}
+	});
+
+</script>
+
+<script>
+	UpUp.start({
+		'content-url': 'index.html',
+		'assets': [],
+		'service-worker-url': 'upup.sw.min.js'
+	});
+</script>
+
+</body>
+</html>
