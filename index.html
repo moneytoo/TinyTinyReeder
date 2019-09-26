@@ -377,11 +377,15 @@
     if (matchMedia('(prefers-color-scheme: dark)').matches) {
         dark = true;
     }
-    let metaTheme = document.createElement('meta');
-    metaTheme.name = 'theme-color';
-    metaTheme.content = dark ? 'black' : 'white';
-    document.head.appendChild(metaTheme);
 
+    if (!dark) {
+        let metaTheme = document.createElement('meta');
+        metaTheme.name = 'theme-color';
+        metaTheme.content = 'lightgray';
+        document.head.appendChild(metaTheme);
+
+        setTimeout(function() { metaTheme.content = 'white'; }, 1000);
+	}
 
 	function getListWidth() {
 		return document.getElementById('list').clientWidth;
