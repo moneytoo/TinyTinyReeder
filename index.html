@@ -372,6 +372,7 @@
 
 	var start;
 	var swipeInProgress;
+	var directionUp = false;
 
 	let dark = false;
     if (matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -481,13 +482,17 @@
 		} else if (event.key === 'x') {
 		    // Mine - mark & remove
             const items = document.getElementsByClassName('previewing');
-            if (items.length >= 0)
+            if (items.length >= 0) {
                 markRead(sid, items[0]);
+                openNext(directionUp);
+            }
 		}
     }
 
     function openNext(backwards) {
         let openNext = false;
+
+        directionUp = backwards;
 
         if (document.getElementsByClassName('previewing').length === 0)
             openNext = true;
